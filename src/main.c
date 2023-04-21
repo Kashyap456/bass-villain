@@ -1,6 +1,7 @@
 #include <avr/io.h>
 #include <avr/interrupt.h>
 #include <stdlib.h>
+#define max(a,b)
 #define _USE_MATH_DEFINES
 #include <math.h>
 #include <stdio.h>
@@ -11,9 +12,8 @@ typedef struct ComplexNumber {
     float c;
 } complex;
 
-volatile int flag = 1;
+volatile int flag = 0;
 volatile unsigned int index = 0;
-volatile unsigned int index2 = 0;
 volatile complex* samples;
 volatile complex* output;
 
@@ -133,10 +133,45 @@ void init_sample(void) {
 }
 
 void sample_freq(void) {
-    if (index >= SAMPLE_SIZE) { flag = 0; index = 0; }
+    if (index == SAMPLE_SIZE) {
+        cli();
+        flag = 0;
+        index = 0;
+//        char buf[256];
+//        dft(samples, output, SAMPLE_SIZE);
+////    for (int i = 0; i < SAMPLE_SIZE; i++) {
+////        sprintf(buf, "Sample: %6.3f\t", samples[i].r);
+////        UART_STRING(buf);
+////    }
+//        float max = -1;
+//        int imax = 0;
+//        for (int i = 0; i < SAMPLE_SIZE; i++) {
+//            float curr = samples[i].r;
+//            if (curr - max > 1 && i != 0) {
+//                max = curr;
+//                imax = i;
+//            }
+//        }
+//        // printf("imax: %d\n", imax);
+//        sprintf(buf, "Approximate frequency: %f\n", (9600.0 / SAMPLE_SIZE) * imax);
+//        UART_STRING(buf);
+//        flag = 0;
+        sei();
+    }
     index++;
-    samples[index].r = 4.0;
+    float out = ADC;
+    if (out < 0) out = 0;
+    samples[index].r = out;
     samples[index].c = 0;
+}
+
+void externint_init(void) {
+    cli();
+    EIMSK |= (1<<0);
+    EICRA |= (1<<0);
+    EICRA |= (1<<1);
+    EIFR |= (1<<0);
+    sei();
 }
 
 ISR(ADC_vect) {
@@ -146,53 +181,48 @@ ISR(ADC_vect) {
     ADCSRA |= (1<<ADIF);
 }
 
-//ISR(PCINT0_vect) {
-//    if (!flag) {
-//        complex *fft = dft(samples, 0, SAMPLE_SIZE);
-//        double max = -1;
-//        int imax = 0;
-//        for (int i = 0; i < SAMPLE_SIZE; i++) {
-//            double curr = fft[i].r;
-//            if (curr - max > 1) {
-//                max = curr;
-//                imax = i;
-//            }
-//        }
-//        // printf("imax: %d\n", imax);
-//        char buffer[256];
-//        sprintf(buffer, "Approximate frequency: %f\n", (62500.0 / SAMPLE_SIZE) * imax);
-//        UART_STRING(buffer);
-//    }
-//    EIFR |= (1<<INTF0);
-//}
+ISR(INT0_vect) {
+    UART_SEND('x');
+    PORTD ^= (1<<PORTD3);
+}
 
 
 
 int main(void) {
+    DDRD &= ~(1<<DDD2);
+    PORTD &= ~(1<<PORTD2);
     DDRD |= (1<<DDD3);
-    PORTD |= (1<<PORTD3);
-    char buf[256];
+    PORTD &= ~(1<<PORTD3);
     init_sample();
     adc_init();
     switch_init();
     UART_INIT(BAUD_PRESCALER);
     while(flag);
 //    for (int i = 0; i < SAMPLE_SIZE; i++) {
-//        samples[i].r = (sin((2 * M_PI * 440 * i) / 4800));
-//        samples[i].c = 0;
-//        // printf("%d\n", sample_list[i]);
+//        sprintf(buf, "Sample: %6.3f\t", samples[i].r);
+//        UART_STRING(buf);
 //    }
+    samples[0].r = 100.0;
     dft(samples, output, SAMPLE_SIZE);
+//    for (int i = 0; i < SAMPLE_SIZE; i++) {
+//        sprintf(buf, "Sample: %6.3f\t", samples[i].r);
+//        UART_STRING(buf);
+//    }
     float max = -1;
     int imax = 0;
     for (int i = 0; i < SAMPLE_SIZE; i++) {
         float curr = samples[i].r;
-        if (curr - max > 1) {
+        if (curr - max > 1 && i != 0) {
             max = curr;
             imax = i;
         }
     }
     // printf("imax: %d\n", imax);
-    sprintf(buf, "Approximate frequency: %f\n", (4800.0 / SAMPLE_SIZE) * imax);
+    char buf[256];
+    sprintf(buf, "Approximate frequency: %f\n", (9600.0 / SAMPLE_SIZE) * imax);
     UART_STRING(buf);
+    while(1) {
+//        if (PIND & (1<<PIND2) && flag == 0) { flag = 1;}
+//        if ((PIND & (1<<PIND2)) && flag) { flag = 1; }
+    }
 }
