@@ -12,7 +12,7 @@ typedef struct ComplexNumber {
     float c;
 } complex;
 
-volatile int flag = 0;
+volatile int flag = 1;
 volatile unsigned int index = 0;
 volatile complex* samples;
 volatile complex* output;
@@ -181,21 +181,21 @@ ISR(ADC_vect) {
     ADCSRA |= (1<<ADIF);
 }
 
-ISR(INT0_vect) {
-    UART_SEND('x');
-    PORTD ^= (1<<PORTD3);
-}
+//ISR(INT0_vect) {
+//    UART_SEND('x');
+//    PORTD ^= (1<<PORTD3);
+//}
 
 
 
 int main(void) {
+    char buf[256];
     DDRD &= ~(1<<DDD2);
     PORTD &= ~(1<<PORTD2);
     DDRD |= (1<<DDD3);
     PORTD &= ~(1<<PORTD3);
     init_sample();
     adc_init();
-    switch_init();
     UART_INIT(BAUD_PRESCALER);
     while(flag);
 //    for (int i = 0; i < SAMPLE_SIZE; i++) {
@@ -218,7 +218,6 @@ int main(void) {
         }
     }
     // printf("imax: %d\n", imax);
-    char buf[256];
     sprintf(buf, "Approximate frequency: %f\n", (9600.0 / SAMPLE_SIZE) * imax);
     UART_STRING(buf);
     while(1) {
