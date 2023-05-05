@@ -6,6 +6,8 @@
 #include <math.h>
 #include <stdio.h>
 #include "uart.h"
+#include "ST7735.h"
+#include "LCD_GFX.h"
 
 typedef struct ComplexNumber {
     float r;
@@ -13,9 +15,33 @@ typedef struct ComplexNumber {
 } complex;
 
 volatile int flag = 0;
+volatile int read = 0;
 volatile unsigned int index = 0;
+volatile unsigned int game_type = 0;
+volatile unsigned int game_step = 0;
+volatile unsigned int count = 0;
+volatile unsigned int correct = 0;
+volatile unsigned int incorrect = 0;
+
 volatile complex* samples;
 volatile complex* output;
+volatile float* expected;
+volatile float* actual;
+
+const char* D = "D";
+const char* Ds = "D#";
+const char* C = "C";
+const char* Cs = "C#";
+const char* A = "A";
+const char* B = "B";
+const char* Bb = "Bb";
+const char* E = "E";
+const char* Es = "E#";
+const char* F = "F";
+const char* Fs = "F#";
+const char* G = "G";
+const char* Gs = "G#";
+const char* Q = "?";
 
 #define SAMPLE_SIZE 256
 #define BAUD_RATE 9600
@@ -60,6 +86,24 @@ void dft(volatile complex *sample_list, volatile complex *out, int high) {
     }
 }
 
+const char* get_note(float freq) {
+    if (freq > 134 && freq < 145) {
+        return D;
+    } else if (freq < 155 && freq > 144) {
+        return Ds;
+    } else if (freq < 165 && freq > 154) {
+        return E;
+    } else if (freq < 180 && freq > 164) {
+        return F;
+    } else if (freq < 200 && freq > 190) {
+        return G;
+    } else if (freq < 225 && freq > 210) {
+        return A;
+    } else {
+        return Q;
+    }
+}
+
 void clock_init(void) {
     cli();
 
@@ -88,6 +132,10 @@ void switch_init(void) {
     EICRA |= (1<<ISC00);
     EIMSK |= (1<<INT0);
     sei();
+}
+
+void button_init(void) {
+
 }
 
 void adc_init(void) {
@@ -127,35 +175,105 @@ void adc_init(void) {
     sei();
 }
 
+void timer1_init(void) {
+    cli();
+    //set I/O pins
+    //DDRD |= (1<<DDD2);
+    //PORTD &= ~(1<<PORTD2);
+
+
+    //turn off output compare port operation
+    TCCR1A &= ~(1<<COM1A1);
+    TCCR1A &= ~(1<<COM1A0);
+    TCCR1A &= ~(1<<COM1B1);
+    TCCR1A &= ~(1<<COM1B0);
+    TCCR1A &= ~(1<<COM1C1);
+    TCCR1A &= ~(1<<COM1C0);
+
+    //waveform generation is normal
+    TCCR1B &= ~(1<<WGM13);
+    TCCR1B &= ~(1<<WGM12);
+    TCCR1A &= ~(1<<WGM11);
+    TCCR1A &= ~(1<<WGM10);
+
+    //pre-scaling set to 1024
+    TCCR1B |= (1<<CS12);
+    TCCR1B &= ~(1<<CS11);
+    TCCR1B &= ~(1<<CS10);
+
+    //TCCR1B |= (1<<ICES1);
+    //TCCR1B |= (1<<ICNC1);
+    //TIMSK1 |= (1<<ICIE1);
+    //activate overflow interrupt
+    TIMSK1 |= (1<<TOIE1);
+
+    sei();
+}
+
 void init_sample(void) {
     samples = (complex*) malloc(sizeof(complex)*SAMPLE_SIZE);
     output = (complex*) malloc(sizeof(complex)*SAMPLE_SIZE);
+    expected = (float*) malloc(sizeof(float)*19);
+    actual = (float*) malloc(sizeof(float)*19);
+    float comeasyouare[19] = {0, 0, 0, 140, 150, 160,
+                              196, 160, 196, 160, 160,
+                              150, 140, 220, 140, 140, 220,
+                              140, 150};
+    for (int i = 3; i < 19; i++) { expected[i] = comeasyouare[i]; }
+    for (int i = 3; i < 19; i++) { actual[i] = -1; }
+
 }
 
 void sample_freq(void) {
-    if (index == SAMPLE_SIZE) {
+    if (index == SAMPLE_SIZE && game_type == 1) {
         cli();
-        flag = 0;
+        flag = -1;
         index = 0;
-//        char buf[256];
-//        dft(samples, output, SAMPLE_SIZE);
-////    for (int i = 0; i < SAMPLE_SIZE; i++) {
-////        sprintf(buf, "Sample: %6.3f\t", samples[i].r);
-////        UART_STRING(buf);
-////    }
-//        float max = -1;
-//        int imax = 0;
-//        for (int i = 0; i < SAMPLE_SIZE; i++) {
-//            float curr = samples[i].r;
-//            if (curr - max > 1 && i != 0) {
-//                max = curr;
-//                imax = i;
-//            }
-//        }
-//        // printf("imax: %d\n", imax);
-//        sprintf(buf, "Approximate frequency: %f\n", (9600.0 / SAMPLE_SIZE) * imax);
+        char buf[256];
+        dft(samples, output, SAMPLE_SIZE);
+//    for (int i = 0; i < SAMPLE_SIZE; i++) {
+//        sprintf(buf, "Sample: %6.3f\t", samples[i].r);
 //        UART_STRING(buf);
-//        flag = 0;
+//    }
+        float max = -1;
+        int imax = 0;
+        for (int i = 0; i < SAMPLE_SIZE; i++) {
+            float curr = samples[i].r;
+            if (curr - max > 1 && i != 0) {
+                max = curr;
+                imax = i;
+            }
+        }
+        // printf("imax: %d\n", imax);
+        sprintf(buf, "Approximate frequency: %f\n", (2400.0 / SAMPLE_SIZE) * imax);
+        UART_STRING(buf);
+        flag = 0;
+        sei();
+    } else if (index == SAMPLE_SIZE && game_type == 2 && game_step < 19) {
+        cli();
+        flag = -1;
+        index = 0;
+        if (actual[game_step] - 1 > -1) {
+            flag = 0;
+            return;
+        }
+        dft(samples, output, SAMPLE_SIZE);
+//    for (int i = 0; i < SAMPLE_SIZE; i++) {
+//        sprintf(buf, "Sample: %6.3f\t", samples[i].r);
+//        UART_STRING(buf);
+//    }
+        float max = -1;
+        int imax = 0;
+        for (int i = 0; i < SAMPLE_SIZE; i++) {
+            float curr = samples[i].r;
+            if (curr - max > 1 && i != 0) {
+                max = curr;
+                imax = i;
+            }
+        }
+        // printf("imax: %d\n", imax);
+        actual[game_step] = (2400.0 / SAMPLE_SIZE) * imax;
+        flag = 0;
         sei();
     }
     index++;
@@ -175,54 +293,102 @@ void externint_init(void) {
 }
 
 ISR(ADC_vect) {
-    if (flag) {
+    if (flag == 1 && (read++) == 3) {
         sample_freq();
+        read = 0;
     }
     ADCSRA |= (1<<ADIF);
 }
 
-ISR(INT0_vect) {
-    UART_SEND('x');
-    PORTD ^= (1<<PORTD3);
+//ISR(INT0_vect) {
+//    UART_SEND('x');
+//    PORTD ^= (1<<PORTD3);
+//}
+
+ISR(TIMER1_OVF_vect) {
+//    char buf[256];
+//    if ( fabs((9600.0 / SAMPLE_SIZE) * imax - expected[game_step]) <  38) {
+//        sprintf(buf, "Correct: %f\n", (9600.0 / SAMPLE_SIZE) * imax);
+//        UART_STRING(buf);
+//        correct++;
+//    } else {
+//        sprintf(buf, "Wrong; Got: %f Expected: %f \n", (9600.0 / SAMPLE_SIZE) * imax, expected[game_step]);
+//        UART_STRING(buf);
+//        incorrect++;
+//    }
+    if (game_step > 2) {
+        int offset = game_step - 3;
+        int up = (1 + (offset/8));
+        if (fabs(actual[game_step] - expected[game_step]) <  11) {
+            LCD_drawBlock(0 + (20*(offset%8)),(64 * (up -1)), 20 + (20*(offset%8)), 64 * up, GREEN);
+            correct++;
+        } else {
+            LCD_drawBlock(0 + (20*(offset%8)),(64 * (up -1)), 20 + (20*(offset%8)), 64 * up, RED);
+            incorrect++;
+        }
+    }
+
+    PORTD |= (1<<PORTD1);
+    Delay_ms(10);
+    PORTD &= ~(1<<PORTD1);
+
+    game_step++;
 }
 
 
 
 int main(void) {
-    DDRD &= ~(1<<DDD2);
-    PORTD &= ~(1<<PORTD2);
-    DDRD |= (1<<DDD3);
+    lcd_init();
+    LCD_setScreen(BLUE);
+    LCD_drawString(20, 64, "Welcome to Bass Villain!", YELLOW, BLACK);
+    DDRD &= ~(1<<DDD3);
     PORTD &= ~(1<<PORTD3);
+    DDRD &= ~(1<<DDD0);
+    PORTD &= ~(1<<PORTD0);
+    while(!game_type) {
+        if (PIND & (1<<PIND0)) {
+            game_type = 1;
+        } else if (PIND & (1<<PIND3)) {
+            game_type = 2;
+        }
+    };
     init_sample();
     adc_init();
-    switch_init();
     UART_INIT(BAUD_PRESCALER);
-    while(flag);
-//    for (int i = 0; i < SAMPLE_SIZE; i++) {
-//        sprintf(buf, "Sample: %6.3f\t", samples[i].r);
-//        UART_STRING(buf);
-//    }
-    samples[0].r = 100.0;
-    dft(samples, output, SAMPLE_SIZE);
-//    for (int i = 0; i < SAMPLE_SIZE; i++) {
-//        sprintf(buf, "Sample: %6.3f\t", samples[i].r);
-//        UART_STRING(buf);
-//    }
-    float max = -1;
-    int imax = 0;
-    for (int i = 0; i < SAMPLE_SIZE; i++) {
-        float curr = samples[i].r;
-        if (curr - max > 1 && i != 0) {
-            max = curr;
-            imax = i;
+    DDRD &= ~(1<<DDD2);
+    PORTD &= ~(1<<PORTD2);
+    DDRD |= (1<<DDD1);
+    PORTD &= ~(1<<PORTD1);
+    if (game_type == 1) {
+        LCD_setScreen(CYAN);
+        LCD_drawString(50, 64, "Free Play Mode!", WHITE, CYAN);
+        while(1) {
+            if (PIND & (1<<PIND2) && flag == 0) { flag = 1;}
         }
-    }
-    // printf("imax: %d\n", imax);
-    char buf[256];
-    sprintf(buf, "Approximate frequency: %f\n", (9600.0 / SAMPLE_SIZE) * imax);
-    UART_STRING(buf);
-    while(1) {
-//        if (PIND & (1<<PIND2) && flag == 0) { flag = 1;}
-//        if ((PIND & (1<<PIND2)) && flag) { flag = 1; }
+    } else if (game_type == 2) {
+        timer1_init();
+        cli();
+        LCD_setScreen(BLACK);
+        for (int i = 3; i < 19; i++) {
+            int offset = (i - 3);
+            int up = (1 + (offset/8));
+            LCD_drawString(10 + 20*(offset % 8), 32 + 64 * (up -1), get_note(expected[i]), YELLOW, BLACK);
+        }
+        sei();
+        while(1) {
+            if (PIND & (1<<PIND2) && flag == 0) { flag = 1;}
+            if (game_step > 18) {
+                cli();
+                char buf[256];
+                for (int i = 3; i < 19; i++) {
+                    sprintf(buf, "Expected: %f Actual: %f \n", expected[i], actual[i]);
+                    UART_STRING(buf);
+                }
+                sprintf(buf, "Correct: %d Incorrect: %d \n", correct, incorrect);
+                LCD_drawString(20, 64, buf, WHITE, BLACK);
+                sei();
+                break;
+            }
+        }
     }
 }
