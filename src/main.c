@@ -99,6 +99,8 @@ const char* get_note(float freq) {
         return G;
     } else if (freq < 225 && freq > 210) {
         return A;
+    } else if (freq < 90 && freq > 80) {
+        return E;
     } else {
         return Q;
     }
@@ -245,8 +247,21 @@ void sample_freq(void) {
             }
         }
         // printf("imax: %d\n", imax);
+        float freq = (2400.0 / SAMPLE_SIZE) * imax;
         sprintf(buf, "Approximate frequency: %f\n", (2400.0 / SAMPLE_SIZE) * imax);
         UART_STRING(buf);
+        if ((freq < 100 && freq > 80) || (freq < 198 && freq > 180)) {
+            LCD_setScreen(GREEN);
+        } else if (freq < 80 && freq > 70) {
+            LCD_setScreen(GREEN);
+        } else if (freq < 60 && freq > 50) {
+            LCD_setScreen(GREEN);
+        } else {
+            LCD_setScreen(RED);
+        }
+        LCD_setScreen(CYAN);
+        LCD_drawString(50, 64, "Free Play Mode!", WHITE, CYAN);
+        Delay_ms(100);
         flag = 0;
         sei();
     } else if (index == SAMPLE_SIZE && game_type == 2 && game_step < 19) {
@@ -319,7 +334,7 @@ ISR(TIMER1_OVF_vect) {
     if (game_step > 2) {
         int offset = game_step - 3;
         int up = (1 + (offset/8));
-        if (fabs(actual[game_step] - expected[game_step]) <  11) {
+        if (fabs(actual[game_step] - expected[game_step]) <  11 || fabs(actual[game_step] - expected[game_step]*2) <  11) {
             LCD_drawBlock(0 + (20*(offset%8)),(64 * (up -1)), 20 + (20*(offset%8)), 64 * up, GREEN);
             correct++;
         } else {
